@@ -67,6 +67,7 @@ export default function App() {
           category: row['Category'] || "Uncategorized",
           subCategory: row['Sub Category'] || "General",
           origin: row['Origin'] || "Region N/A",
+          location: row['Location'] || "N/A", // Extracted Location field
           tastingNotes: row['Tasting Notes'] || "No notes available.",
           tableNotes: row['Notes'] || row['Detailed Note'] || "Standard service profile.",
           status: row['Status'] || "In stock",
@@ -99,7 +100,8 @@ export default function App() {
       const searchStr = searchTerm.toLowerCase();
       return item.name.toLowerCase().includes(searchStr) || 
              item.subCategory.toLowerCase().includes(searchStr) ||
-             item.origin.toLowerCase().includes(searchStr);
+             item.origin.toLowerCase().includes(searchStr) ||
+             item.location.toLowerCase().includes(searchStr); // Search by Location added
     }).filter(item => activeSubCategory === 'All' || item.subCategory === activeSubCategory);
   }, [searchTerm, activeSubCategory, activeProgram, inventoryData]);
 
@@ -180,7 +182,7 @@ export default function App() {
                 <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-stone-300" size={20} />
                 <input 
                   type="text" 
-                  placeholder={`Search ${activeProgram.toLowerCase()}...`}
+                  placeholder={`Search by name, origin, or location...`}
                   className="w-full pl-14 pr-4 py-4 bg-stone-50 rounded-2xl focus:outline-none focus:ring-2 focus:ring-stone-100 transition-all border-transparent border text-stone-800 font-medium"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
@@ -241,11 +243,15 @@ export default function App() {
                         <div className="grid grid-cols-1 md:grid-cols-12 gap-6 mt-6">
                           <div className="md:col-span-4 space-y-4">
                             <div className="bg-white p-4 rounded-2xl border border-stone-100 shadow-sm">
+                              <p className="text-[9px] font-black text-stone-300 uppercase mb-1 flex items-center gap-1"><MapPin size={10} /> Location</p>
+                              <p className="text-sm font-bold text-stone-800">{item.location}</p>
+                            </div>
+                            <div className="bg-white p-4 rounded-2xl border border-stone-100 shadow-sm">
                               <p className="text-[9px] font-black text-stone-300 uppercase mb-1">Origin</p>
                               <p className="text-sm font-bold text-stone-700">{item.origin}</p>
                             </div>
                             <div className="bg-white p-4 rounded-2xl border border-stone-100 shadow-sm">
-                              <p className="text-[9px] font-black text-stone-300 uppercase mb-1">The Palate</p>
+                              <p className="text-[9px] font-black text-stone-300 uppercase mb-1 flex items-center gap-1"><GlassWater size={10}/> Profile</p>
                               <p className="text-sm text-stone-600 italic font-serif leading-relaxed">"{item.tastingNotes}"</p>
                             </div>
                           </div>
