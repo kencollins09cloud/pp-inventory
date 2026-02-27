@@ -1,0 +1,287 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import { 
+  Search, Info, MapPin, Wine, ChevronRight, ChevronDown, 
+  GlassWater, Sparkles, Grape, Flame, Beer, Droplets, 
+  Star, ShieldCheck, Moon, Repeat, RefreshCw, AlertCircle 
+} from 'lucide-react';
+
+// --- CONFIGURATION ---
+const SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSXAU1f5QYEG2F3VWipA7X_svPhBdS2s7u6nu8kkPjkj9RJMBxQzdzhQPcQsl18CgZs-8-Tgx3DUCGP/pub?output=csv";
+
+export default function App() {
+  const [inventoryData, setInventoryData] = useState({
+    Wine: [], Spirits: [], Beer: [], "After Dinner": [], "Captain's List": [], Allocated: []
+  });
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [debugInfo, setDebugInfo] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [activeProgram, setActiveProgram] = useState('Wine'); 
+  const [activeSubCategory, setActiveSubCategory] = useState('All');
+  const [expandedItems, setExpandedItems] = useState({});
+
+  // Bucket logic based on your Master CSV structure
+  const getProgramBucket = (row) => {
+    const cat = (row['Category'] || "").toLowerCase();
+    const sub = (row['Sub Category'] || "").toLowerCase();
+
+    if (cat.includes('allocated') || sub.includes('allocated')) return 'Allocated';
+    if (cat.includes('captain') || sub.includes('captain')) return "Captain's List";
+    if (cat.includes('wine')) return 'Wine';
+    if (cat.includes('beer')) return 'Beer';
+    if (cat.includes('port') || cat.includes('dessert') || cat.includes('after dinner') || cat.includes('digestif') || cat.includes('cordial') || cat.includes('cognac')) return 'After Dinner';
+    
+    return 'Spirits';
+  };
+
+  const fetchData = async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      const response = await fetch(SHEET_URL);
+      if (!response.ok) throw new Error('Could not connect to the spreadsheet.');
+      const csvText = await response.text();
+      
+      const lines = csvText.split(/\r?\n/).filter(line => line.trim() !== "");
+      if (lines.length < 2) throw new Error('The spreadsheet appears to be empty.');
+      
+      // Parse Headers
+      const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
+      setDebugInfo({ headersFound: headers, rowCount: lines.length });
+
+      const newInventory = { Wine: [], Spirits: [], Beer: [], "After Dinner": [], "Captain's List": [], Allocated: [] };
+      let totalCount = 0;
+
+      for (let i = 1; i < lines.length; i++) {
+        const values = lines[i].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(v => v.trim().replace(/^"|"$/g, ''));
+        const row = {};
+        headers.forEach((header, idx) => { if (header) row[header] = values[idx]; });
+
+        // Skip rows without a product name
+        if (!row['Product Name'] || row['Product Name'] === '0' || row['Product Name'] === '') continue;
+
+        const bucket = getProgramBucket(row);
+        newInventory[bucket].push({
+          id: `item-${i}`,
+          name: row['Product Name'],
+          category: row['Category'] || "Uncategorized",
+          subCategory: row['Sub Category'] || "General",
+          origin: row['Origin'] || "Region N/A",
+          tastingNotes: row['Tasting Notes'] || "No notes available.",
+          tableNotes: row['Notes'] || row['Detailed Note'] || "Standard service profile.",
+          status: row['Status'] || "In stock",
+          price: row['Menu Price'] || row['Price Per 1oz Pour'] || "N/A",
+          substitute: row['Approved Backup'] || "Consult Sommelier/Lead",
+          subReason: row['Sub Reason'] || "Comparable flavor profile."
+        });
+        totalCount++;
+      }
+
+      if (totalCount === 0) {
+          throw new Error(`Connected to sheet but found 0 valid products. Headers seen: ${headers.join(', ')}`);
+      }
+
+      setInventoryData(newInventory);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => { fetchData(); }, []);
+
+  const currentProgramData = inventoryData[activeProgram] || [];
+  const subCategories = ['All', ...new Set(currentProgramData.map(item => item.subCategory))];
+
+  const filteredData = useMemo(() => {
+    return currentProgramData.filter(item => {
+      const searchStr = searchTerm.toLowerCase();
+      return item.name.toLowerCase().includes(searchStr) || 
+             item.subCategory.toLowerCase().includes(searchStr) ||
+             item.origin.toLowerCase().includes(searchStr);
+    }).filter(item => activeSubCategory === 'All' || item.subCategory === activeSubCategory);
+  }, [searchTerm, activeSubCategory, activeProgram, inventoryData]);
+
+  const toggleExpand = (id) => { setExpandedItems(prev => ({ ...prev, [id]: !prev[id] })); };
+
+  const getStatusColor = (status) => {
+    const s = status?.toLowerCase() || '';
+    if (s.includes('86d')) return 'bg-red-50 text-red-600 border-red-100';
+    if (s.includes('allocated') || s.includes('limited')) return 'bg-purple-50 text-purple-700 border-purple-100';
+    return 'bg-emerald-50 text-emerald-700 border-emerald-100';
+  };
+
+  const getProgramIcon = (prog) => {
+    switch(prog) {
+      case 'Wine': return <Wine size={16} />;
+      case 'Spirits': return <Flame size={16} />;
+      case 'Beer': return <Beer size={16} />;
+      case 'After Dinner': return <Moon size={16} />;
+      case "Captain's List": return <Star size={16} />;
+      case "Allocated": return <ShieldCheck size={16} />;
+      default: return null;
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-white flex flex-col items-center justify-center p-8">
+        <RefreshCw className="animate-spin text-stone-300 mb-4" size={48} />
+        <p className="font-serif italic text-xl text-stone-500">Updating Porch & Parlor Inventory...</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-[#fdfcfb] font-sans text-stone-900 pb-20">
+      <div className="max-w-4xl mx-auto px-4 py-8">
+        <header className="mb-6 flex flex-col gap-6">
+          <div className="flex items-center justify-between">
+            <div className="border-l-4 border-stone-800 pl-4">
+              <h1 className="text-3xl md:text-4xl font-serif font-bold text-stone-800 tracking-tight uppercase">Porch and Parlor</h1>
+              <p className="text-stone-500 mt-1 italic font-medium text-sm">Staff Intelligence System • 2026</p>
+            </div>
+            <button onClick={fetchData} className="p-2 hover:bg-stone-100 rounded-full text-stone-400">
+              <RefreshCw size={20} />
+            </button>
+          </div>
+          
+          <div className="flex md:grid md:grid-cols-6 bg-stone-100 p-1 rounded-2xl gap-1 overflow-x-auto no-scrollbar shadow-inner">
+            {Object.keys(inventoryData).map(prog => (
+              <button 
+                key={prog}
+                onClick={() => { setActiveProgram(prog); setActiveSubCategory('All'); }}
+                className={`flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap flex-1 ${
+                  activeProgram === prog ? 'bg-white shadow-md text-stone-900' : 'text-stone-400 hover:text-stone-600'
+                }`}
+              >
+                {getProgramIcon(prog)} {prog}
+              </button>
+            ))}
+          </div>
+        </header>
+
+        {error ? (
+          <div className="bg-red-50 border border-red-100 p-8 rounded-3xl text-center shadow-lg">
+            <AlertCircle className="text-red-400 mx-auto mb-4" size={48} />
+            <h3 className="text-lg font-bold text-red-900 mb-2">Inventory Sync Error</h3>
+            <p className="text-red-800 font-medium mb-6">{error}</p>
+            <div className="bg-white/50 p-4 rounded-xl text-left mb-6 overflow-x-auto">
+                <p className="text-[10px] font-black uppercase text-stone-400 mb-2 tracking-widest">Diagnostic Info:</p>
+                <pre className="text-[10px] text-stone-600">{JSON.stringify(debugInfo, null, 2)}</pre>
+            </div>
+            <button onClick={fetchData} className="px-8 py-3 bg-red-600 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-xl shadow-red-200">Retry Refresh</button>
+          </div>
+        ) : (
+          <>
+            <div className="sticky top-4 z-10 bg-white/90 backdrop-blur-md shadow-2xl shadow-stone-200/50 rounded-3xl border border-stone-100 p-4 mb-8">
+              <div className="relative mb-4">
+                <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-stone-300" size={20} />
+                <input 
+                  type="text" 
+                  placeholder={`Search ${activeProgram.toLowerCase()}...`}
+                  className="w-full pl-14 pr-4 py-4 bg-stone-50 rounded-2xl focus:outline-none focus:ring-2 focus:ring-stone-100 transition-all border-transparent border text-stone-800 font-medium"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                />
+              </div>
+              
+              <div className="flex overflow-x-auto pb-1 gap-2 no-scrollbar border-t border-stone-50 pt-3">
+                {subCategories.map(cat => (
+                  <button
+                    key={cat}
+                    onClick={() => setActiveSubCategory(cat)}
+                    className={`px-5 py-2 rounded-full whitespace-nowrap text-[9px] font-black uppercase tracking-widest transition-all ${
+                      activeSubCategory === cat ? 'bg-stone-800 text-white shadow-lg' : 'bg-stone-50 text-stone-400'
+                    }`}
+                  >
+                    {cat}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              {filteredData.length > 0 ? (
+                filteredData.map(item => (
+                  <div key={item.id} className={`group bg-white rounded-3xl border transition-all duration-300 overflow-hidden ${expandedItems[item.id] ? 'border-stone-300 shadow-xl' : 'border-stone-100 hover:border-stone-200 shadow-sm'}`}>
+                    <div className="p-5 flex items-center justify-between cursor-pointer select-none" onClick={() => toggleExpand(item.id)}>
+                      <div className="flex items-center gap-5">
+                        <div className={`p-4 rounded-2xl ${item.status?.toLowerCase().includes('86d') ? 'bg-red-50 text-red-400' : 'bg-stone-50 text-stone-400'}`}>
+                          {item.status?.toLowerCase().includes('86d') ? <Repeat size={22} /> : getProgramIcon(activeProgram)}
+                        </div>
+                        <div>
+                          <h3 className="font-serif font-bold text-xl text-stone-800 leading-tight uppercase tracking-tight">{item.name}</h3>
+                          <div className="flex items-center gap-3 mt-1.5">
+                            <span className="text-[9px] font-black uppercase tracking-[0.15em] text-stone-400">{item.subCategory}</span>
+                            <span className="w-1 h-1 rounded-full bg-stone-200"></span>
+                            <span className={`text-[8px] px-2.5 py-1 rounded-lg font-black uppercase border tracking-tighter ${getStatusColor(item.status)}`}>
+                              {item.status}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="text-stone-200 pr-2 group-hover:text-stone-400 transition-colors">
+                        {expandedItems[item.id] ? <ChevronDown size={24} /> : <ChevronRight size={24} />}
+                      </div>
+                    </div>
+
+                    {expandedItems[item.id] && (
+                      <div className="px-6 pb-8 pt-2 bg-stone-50/30 border-t border-stone-50 animate-in fade-in slide-in-from-top-1 duration-300">
+                        {item.status?.toLowerCase().includes('86d') && (
+                          <div className="mt-4 p-4 bg-red-50 border border-red-100 rounded-2xl flex items-center gap-4">
+                            <Repeat className="text-red-500 animate-pulse" size={20} />
+                            <div>
+                              <p className="text-[10px] font-black text-red-600 uppercase tracking-widest">Substitution Required</p>
+                              <p className="text-sm text-red-800 font-medium">Pivot to: <span className="font-bold underline uppercase">{item.substitute}</span></p>
+                            </div>
+                          </div>
+                        )}
+                        <div className="grid grid-cols-1 md:grid-cols-12 gap-6 mt-6">
+                          <div className="md:col-span-4 space-y-4">
+                            <div className="bg-white p-4 rounded-2xl border border-stone-100 shadow-sm">
+                              <p className="text-[9px] font-black text-stone-300 uppercase mb-1">Origin</p>
+                              <p className="text-sm font-bold text-stone-700">{item.origin}</p>
+                            </div>
+                            <div className="bg-white p-4 rounded-2xl border border-stone-100 shadow-sm">
+                              <p className="text-[9px] font-black text-stone-300 uppercase mb-1">The Palate</p>
+                              <p className="text-sm text-stone-600 italic font-serif leading-relaxed">"{item.tastingNotes}"</p>
+                            </div>
+                          </div>
+                          <div className="md:col-span-8 flex flex-col gap-4">
+                            <div className="bg-white p-5 rounded-3xl border border-stone-100 shadow-sm flex flex-col flex-grow">
+                              <div className="flex items-center justify-between mb-3 pb-2 border-b border-stone-50">
+                                <p className="text-[9px] font-black text-stone-800 uppercase flex items-center gap-2">Narrative</p>
+                                <span className="text-[9px] font-black text-stone-400">{item.price}</span>
+                              </div>
+                              <p className="text-sm text-stone-700 leading-relaxed font-serif">{item.tableNotes}</p>
+                            </div>
+                            <div className="bg-emerald-50/50 p-5 rounded-3xl border border-emerald-100">
+                              <p className="text-[10px] font-black text-emerald-800 uppercase mb-2 flex items-center gap-2"><Repeat size={12}/> Suggested Alternative</p>
+                              <p className="text-sm font-bold text-stone-800 uppercase">{item.substitute}</p>
+                              <p className="text-xs text-stone-600 mt-0.5">{item.subReason}</p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))
+              ) : (
+                <div className="text-center py-24 bg-white rounded-3xl border-2 border-dashed border-stone-100">
+                  <Star className="mx-auto text-stone-100 mb-6" size={64} />
+                  <p className="text-stone-300 font-serif italic text-xl">No items found matching your search.</p>
+                </div>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+
+      <footer className="mt-10 text-center border-t border-stone-100 pt-12 pb-16">
+        <p className="text-stone-200 text-[9px] font-black uppercase tracking-[0.5em]">Integrity • Knowledge • Hospitality</p>
+      </footer>
+    </div>
+  );
+}
